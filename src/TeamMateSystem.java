@@ -29,6 +29,7 @@ public class TeamMateSystem {
     private void shutdown() {
         scanner.close();
         FileHandler.shutdown();
+        teamFormationStrategy.shutdown(); // ADDED THIS LINE
         System.out.println("Thank you for using TeamMate!");
     }
 
@@ -37,7 +38,7 @@ public class TeamMateSystem {
             System.out.println("\n=== MAIN MENU ===");
             System.out.println("1. Load participants from CSV");
             System.out.println("2. Conduct new surveys");
-            System.out.println("3. Form teams");
+            System.out.println("3. Form teams (CONCURRENT)");
             System.out.println("4. View participants");
             System.out.println("5. Save teams to CSV");
             System.out.println("6. Exit");
@@ -77,7 +78,7 @@ public class TeamMateSystem {
 
         try {
             currentTeams = teamFormationStrategy.formTeams(participants, teamSize);
-            System.out.println("Successfully formed " + currentTeams.size() + " teams!");
+            System.out.println("Successfully formed " + currentTeams.size() + " teams using CONCURRENT processing!");
         } catch (TeamFormationException e) {
             System.out.println("Error forming teams: " + e.getMessage());
         }
