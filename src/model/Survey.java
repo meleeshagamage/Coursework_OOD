@@ -25,14 +25,22 @@ public class Survey {
 
         try {
             int count = Integer.parseInt(scanner.nextLine());
-            if (count <= 0) return;
+            if (count <= 0) {
+                System.out.println("Invalid number. Must be greater than 0.");
+                return;
+            }
 
             for (int i = 0; i < count; i++) {
                 System.out.println("\n--- Participant " + (i + 1) + " ---");
 
                 String id = getInput(scanner, "Enter participant ID: ");
-                if (id.isEmpty() || participantExists(participants, id)) {
-                    System.out.println("Participant ID already exists or is empty. Skipping...");
+                if (id.isEmpty()) {
+                    System.out.println("Participant ID cannot be empty. Skipping...");
+                    continue;
+                }
+
+                if (participantExists(participants, id)) {
+                    System.out.println("Participant ID already exists. Skipping...");
                     continue;
                 }
 
@@ -45,13 +53,17 @@ public class Survey {
                 }
 
                 Participant participant = new Participant(id, name, email);
-                conductSurveyForParticipant(participant, scanner);
-                participants.add(participant);
+                boolean surveyCompleted = conductSurveyForParticipant(participant, scanner);
 
-                System.out.println("Participant added and survey completed!");
+                if (surveyCompleted) {
+                    participants.add(participant);
+                    System.out.println("Participant added and survey completed!");
+                } else {
+                    System.out.println("Survey was not completed. Participant not added.");
+                }
             }
         } catch (NumberFormatException e) {
-            System.out.println("Invalid number.");
+            System.out.println("Invalid number format. Please enter a valid integer.");
         }
     }
 
@@ -64,13 +76,17 @@ public class Survey {
         return participants.stream().anyMatch(p -> p.getId().equals(id));
     }
 
-    public static void conductSurveyForParticipant(Participant participant, Scanner scanner) {
+    public static boolean conductSurveyForParticipant(Participant participant, Scanner scanner) {
         System.out.println("\n=== Personality Survey for " + participant.getName() + " ===");
 
         Survey survey = new Survey(participant.getId());
-        survey.conductSurvey(scanner);
+        boolean completed = survey.conductSurvey(scanner);
 
-        updateParticipantFromSurvey(participant, survey);
+        if (completed) {
+            updateParticipantFromSurvey(participant, survey);
+            return true;
+        }
+        return false;
     }
 
     private static void updateParticipantFromSurvey(Participant participant, Survey survey) {
@@ -83,7 +99,7 @@ public class Survey {
     }
 
     // Individual survey methods
-    public void conductSurvey(Scanner scanner) {
+    public boolean conductSurvey(Scanner scanner) {
         System.out.println("Please rate each statement from 1 (Strongly Disagree) to 5 (Strongly Agree)");
 
         String[] questions = {
@@ -94,13 +110,28 @@ public class Survey {
                 "I like making quick decisions and adapting in dynamic situations."
         };
 
+        // Check if user wants to cancel
+        System.out.print("Press Enter to continue or 'cancel' to stop: ");
+        String input = scanner.nextLine().trim();
+        if (input.equalsIgnoreCase("cancel")) {
+            System.out.println("Survey cancelled.");
+            return false;
+        }
+
         for (int i = 0; i < questions.length; i++) {
             int response;
             while (true) {
                 System.out.printf("\nQ%d: %s%n", i + 1, questions[i]);
-                System.out.print("Your rating (1-5): ");
+                System.out.print("Your rating (1-5, or 'cancel' to stop): ");
+                String responseInput = scanner.nextLine().trim();
+
+                if (responseInput.equalsIgnoreCase("cancel")) {
+                    System.out.println("Survey cancelled.");
+                    return false;
+                }
+
                 try {
-                    response = Integer.parseInt(scanner.nextLine());
+                    response = Integer.parseInt(responseInput);
                     if (response >= 1 && response <= 5) {
                         responses.put("Q" + (i + 1), response);
                         break;
@@ -108,36 +139,53 @@ public class Survey {
                         System.out.println("Please enter a number between 1 and 5.");
                     }
                 } catch (NumberFormatException e) {
-                    System.out.println("Please enter a valid number.");
+                    System.out.println("Please enter a valid number between 1 and 5.");
                 }
             }
         }
 
-        collectAdditionalInfo(scanner);
+        if (!collectAdditionalInfo(scanner)) {
+            System.out.println("Survey cancelled during additional info collection.");
+            return false;
+        }
+
         calculateResults();
         displayResults();
+        return true;
     }
 
-    private void collectAdditionalInfo(Scanner scanner) {
-        this.preferredGame = selectGame(scanner);
-        this.skillLevel = selectSkillLevel(scanner);
-        this.preferredRole = selectRole(scanner);
+    private boolean collectAdditionalInfo(Scanner scanner) {
+        try {
+            this.preferredGame = selectGame(scanner);
+            this.skillLevel = selectSkillLevel(scanner);
+            this.preferredRole = selectRole(scanner);
+            return true;
+        } catch (SurveyCancelledException e) {
+            return false;
+        }
     }
 
-    private String selectGame(Scanner scanner) {
+    private String selectGame(Scanner scanner) throws SurveyCancelledException {
         String[] games = {"Valorant", "DOTA 2", "CS:GO", "FIFA", "Basketball", "Chess", "Badminton"};
         System.out.println("\n=== Game Preference ===");
         for (int i = 0; i < games.length; i++) {
             System.out.printf("%d. %s%n", i + 1, games[i]);
         }
 
-        int choice;
         while (true) {
-            System.out.print("Select your preferred game (1-" + games.length + "): ");
+            System.out.print("Select your preferred game (1-" + games.length + ", or 'cancel' to stop): ");
+            String input = scanner.nextLine().trim();
+
+            if (input.equalsIgnoreCase("cancel")) {
+                throw new SurveyCancelledException();
+            }
+
             try {
-                choice = Integer.parseInt(scanner.nextLine());
+                int choice = Integer.parseInt(input);
                 if (choice >= 1 && choice <= games.length) {
                     return games[choice - 1];
+                } else {
+                    System.out.println("Please enter a number between 1 and " + games.length + ".");
                 }
             } catch (NumberFormatException e) {
                 System.out.println("Please enter a valid number.");
@@ -145,14 +193,21 @@ public class Survey {
         }
     }
 
-    private int selectSkillLevel(Scanner scanner) {
-        int skillLevel;
+    private int selectSkillLevel(Scanner scanner) throws SurveyCancelledException {
         while (true) {
-            System.out.print("Enter your skill level (1-10, where 10 is expert): ");
+            System.out.print("Enter your skill level (1-10, where 10 is expert, or 'cancel' to stop): ");
+            String input = scanner.nextLine().trim();
+
+            if (input.equalsIgnoreCase("cancel")) {
+                throw new SurveyCancelledException();
+            }
+
             try {
-                skillLevel = Integer.parseInt(scanner.nextLine());
+                int skillLevel = Integer.parseInt(input);
                 if (skillLevel >= 1 && skillLevel <= 10) {
                     return skillLevel;
+                } else {
+                    System.out.println("Please enter a number between 1 and 10.");
                 }
             } catch (NumberFormatException e) {
                 System.out.println("Please enter a valid number between 1 and 10.");
@@ -160,7 +215,7 @@ public class Survey {
         }
     }
 
-    private String selectRole(Scanner scanner) {
+    private String selectRole(Scanner scanner) throws SurveyCancelledException {
         String[] roles = {"Strategist", "Attacker", "Defender", "Supporter", "Coordinator"};
         Map<String, String> roleDescriptions = new HashMap<>();
         roleDescriptions.put("Strategist", "Focuses on tactics and planning. Keeps the bigger picture in mind.");
@@ -174,13 +229,20 @@ public class Survey {
             System.out.printf("%d. %s: %s%n", i + 1, roles[i], roleDescriptions.get(roles[i]));
         }
 
-        int choice;
         while (true) {
-            System.out.print("Select your preferred role (1-" + roles.length + "): ");
+            System.out.print("Select your preferred role (1-" + roles.length + ", or 'cancel' to stop): ");
+            String input = scanner.nextLine().trim();
+
+            if (input.equalsIgnoreCase("cancel")) {
+                throw new SurveyCancelledException();
+            }
+
             try {
-                choice = Integer.parseInt(scanner.nextLine());
+                int choice = Integer.parseInt(input);
                 if (choice >= 1 && choice <= roles.length) {
                     return roles[choice - 1];
+                } else {
+                    System.out.println("Please enter a number between 1 and " + roles.length + ".");
                 }
             } catch (NumberFormatException e) {
                 System.out.println("Please enter a valid number.");
@@ -200,6 +262,8 @@ public class Survey {
             return "Balanced";
         } else if (totalScore >= 50 && totalScore <= 69) {
             return "Thinker";
+        } else if (totalScore >= 20 && totalScore <= 49) {
+            return "Adaptable";
         } else {
             return "Unknown";
         }
@@ -210,6 +274,7 @@ public class Survey {
             case "Leader": return "Confident, decision-maker, naturally takes charge";
             case "Balanced": return "Adaptive, communicative, team-oriented";
             case "Thinker": return "Observant, analytical, prefers planning before action";
+            case "Adaptable": return "Flexible, supportive, adjusts to team needs";
             default: return "Personality type not determined";
         }
     }
@@ -222,6 +287,7 @@ public class Survey {
         System.out.println("Preferred Game: " + preferredGame);
         System.out.println("Skill Level: " + skillLevel);
         System.out.println("Preferred Role: " + preferredRole);
+        System.out.println("=" .repeat(40));
     }
 
     // Getters
@@ -233,7 +299,7 @@ public class Survey {
     public int getTotalScore() { return totalScore; }
     public String getPersonalityType() { return personalityType; }
 
-    // Setters
+    // Setters - removed dangerous setPersonalityType method
     public void setParticipantId(String participantId) { this.participantId = participantId; }
     public void setResponses(Map<String, Integer> responses) { this.responses = new HashMap<>(responses); }
     public void setPreferredGame(String preferredGame) { this.preferredGame = preferredGame; }
@@ -241,7 +307,13 @@ public class Survey {
     public void setPreferredRole(String preferredRole) { this.preferredRole = preferredRole; }
     public void setTotalScore(int totalScore) {
         this.totalScore = totalScore;
-        this.personalityType = determinePersonalityType(totalScore);
+        this.personalityType = determinePersonalityType(totalScore); // Maintains consistency
     }
-    public void setPersonalityType(String personalityType) { this.personalityType = personalityType; }
+
+    // Custom exception for survey cancellation
+    private static class SurveyCancelledException extends Exception {
+        public SurveyCancelledException() {
+            super("Survey was cancelled by user");
+        }
+    }
 }
