@@ -89,9 +89,13 @@ public class BalancedTeamFormationStrategy implements TeamFormationStrategy {
         categorized.put("Leader", new ArrayList<>());
         categorized.put("Thinker", new ArrayList<>());
         categorized.put("Balanced", new ArrayList<>());
+        categorized.put("Unknown", new ArrayList<>()); // Add Unknown category
 
         for (Participant p : participants) {
             String type = p.getPersonalityType();
+            if (type == null) {
+                type = "Unknown"; // Handle null personality types
+            }
             if (categorized.containsKey(type)) {
                 categorized.get(type).add(p);
             } else {
@@ -319,8 +323,13 @@ public class BalancedTeamFormationStrategy implements TeamFormationStrategy {
         Map<String, Integer> currentCounts = countPersonalityTypes(team);
         Map<String, Integer> newCounts = new HashMap<>(currentCounts);
 
-        newCounts.put(remove.getPersonalityType(), newCounts.get(remove.getPersonalityType()) - 1);
-        newCounts.put(add.getPersonalityType(), newCounts.getOrDefault(add.getPersonalityType(), 0) + 1);
+        // Safely handle null personality types
+        String removeType = remove.getPersonalityType() != null ? remove.getPersonalityType() : "Unknown";
+        String addType = add.getPersonalityType() != null ? add.getPersonalityType() : "Unknown";
+
+        // Safely decrement and increment counts
+        newCounts.put(removeType, newCounts.getOrDefault(removeType, 0) - 1);
+        newCounts.put(addType, newCounts.getOrDefault(addType, 0) + 1);
 
         return isValidPersonalityMix(newCounts, team.getTeamSize());
     }
@@ -338,26 +347,33 @@ public class BalancedTeamFormationStrategy implements TeamFormationStrategy {
         return newCount <= 2;
     }
 
+    // FIXED METHOD: Handle null personality types safely
     private Map<String, Integer> countPersonalityTypes(Team team) {
         Map<String, Integer> counts = new HashMap<>();
         counts.put("Leader", 0);
         counts.put("Thinker", 0);
         counts.put("Balanced", 0);
+        counts.put("Unknown", 0); // Add Unknown category
 
         for (Participant member : team.getMembers()) {
-            counts.put(member.getPersonalityType(), counts.get(member.getPersonalityType()) + 1);
+            String type = member.getPersonalityType();
+            if (type == null) {
+                type = "Unknown"; // Handle null types
+            }
+            counts.put(type, counts.getOrDefault(type, 0) + 1);
         }
         return counts;
     }
 
     private boolean isValidPersonalityMix(Map<String, Integer> personalityCounts, int teamSize) {
-        int leaders = personalityCounts.get("Leader");
-        int thinkers = personalityCounts.get("Thinker");
-        int balanced = personalityCounts.get("Balanced");
+        int leaders = personalityCounts.getOrDefault("Leader", 0);
+        int thinkers = personalityCounts.getOrDefault("Thinker", 0);
+        int balanced = personalityCounts.getOrDefault("Balanced", 0);
+        int unknown = personalityCounts.getOrDefault("Unknown", 0);
 
         boolean hasValidLeaders = leaders <= 1;
         boolean hasValidThinkers = thinkers <= 2; // Can have 0-2 thinkers
-        boolean hasValidTotal = (leaders + thinkers + balanced) == teamSize;
+        boolean hasValidTotal = (leaders + thinkers + balanced + unknown) == teamSize;
 
         return hasValidLeaders && hasValidThinkers && hasValidTotal;
     }
@@ -451,7 +467,8 @@ public class BalancedTeamFormationStrategy implements TeamFormationStrategy {
                 " | Size: " + team.getCurrentSize() + "/" + team.getTeamSize());
         System.out.println("Personality: Leaders=" + personalityCounts.get("Leader") +
                 ", Thinkers=" + personalityCounts.get("Thinker") +
-                ", Balanced=" + personalityCounts.get("Balanced"));
+                ", Balanced=" + personalityCounts.get("Balanced") +
+                ", Unknown=" + personalityCounts.get("Unknown"));
         System.out.println("Roles: " + uniqueRoles.size() + " unique - " + uniqueRoles);
         System.out.println("Games: " + gameCounts);
 
@@ -464,7 +481,8 @@ public class BalancedTeamFormationStrategy implements TeamFormationStrategy {
 
         System.out.println("Members:");
         for (Participant member : team.getMembers()) {
-            System.out.println("  - " + member.getName() + " | " + member.getPersonalityType() +
+            String personality = member.getPersonalityType() != null ? member.getPersonalityType() : "Unknown";
+            System.out.println("  - " + member.getName() + " | " + personality +
                     " | Skill: " + member.getSkillLevel() + " | " + member.getPreferredRole() +
                     " | " + member.getPreferredGame());
         }
