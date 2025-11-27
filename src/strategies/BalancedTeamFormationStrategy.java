@@ -6,13 +6,22 @@ import model.Team;
 import exceptions.TeamFormationException;
 
 import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 public class BalancedTeamFormationStrategy implements TeamFormationStrategy {
+    private final ExecutorService teamExecutor;
+    private final int availableProcessors;
+
+    public BalancedTeamFormationStrategy() {
+        this.availableProcessors = Runtime.getRuntime().availableProcessors();
+        this.teamExecutor = Executors.newFixedThreadPool(availableProcessors);
+    }
 
     @Override
     public List<Team> formTeams(List<Participant> participants, int teamSize) throws TeamFormationException {
-        System.out.println("Creating balanced teams of size " + teamSize + "...");
+        System.out.println("Starting concurrent team formation with " + availableProcessors + " threads...");
 
         validateInput(participants, teamSize);
         List<Participant> availableParticipants = new ArrayList<>(participants);
@@ -22,8 +31,8 @@ public class BalancedTeamFormationStrategy implements TeamFormationStrategy {
         // Sort by skill level for better distribution
         availableParticipants.sort(Comparator.comparingInt(Participant::getSkillLevel).reversed());
 
-        // Categorize participants
-        Map<String, List<Participant>> categorized = categorizeParticipants(availableParticipants);
+        // Categorize participants CONCURRENTLY
+        Map<String, List<Participant>> categorized = concurrentlyCategorizeParticipants(availableParticipants);
         List<Participant> leaders = categorized.get("Leader");
         List<Participant> thinkers = categorized.get("Thinker");
         List<Participant> balanced = categorized.get("Balanced");
@@ -38,21 +47,155 @@ public class BalancedTeamFormationStrategy implements TeamFormationStrategy {
 
         List<Team> teams = createEmptyTeams(teamCount, teamSize);
 
-        // Distribution phases
-        distributeLeaders(teams, leaders);
-        distributeThinkers(teams, thinkers, teamSize);
-        fillWithBalanced(teams, balanced, teamSize);
-        ensureFullTeams(teams, availableParticipants, teamSize);
+        // CONCURRENT TEAM FORMATION
+        formTeamsConcurrently(teams, leaders, thinkers, balanced, teamSize);
 
-        // Balancing
-        balanceTeams(teams);
+        // CONCURRENT BALANCING
+        balanceTeamsConcurrently(teams);
 
+        // VALIDATION DISPLAY - KEEP YOUR ORIGINAL METHOD
         displayTeamsWithValidity(teams);
         displayParticipantUsage(teams, availableParticipants);
 
+        teamExecutor.shutdown();
         return teams;
     }
 
+    private Map<String, List<Participant>> concurrentlyCategorizeParticipants(List<Participant> participants) {
+        int batchSize = Math.max(1, participants.size() / availableProcessors);
+        List<Callable<Map<String, List<Participant>>>> tasks = new ArrayList<>();
+
+        for (int i = 0; i < participants.size(); i += batchSize) {
+            final int start = i;
+            final int end = Math.min(participants.size(), i + batchSize);
+            final List<Participant> batch = participants.subList(start, end);
+
+            tasks.add(() -> {
+                Map<String, List<Participant>> batchResult = new HashMap<>();
+                batchResult.put("Leader", new ArrayList<>());
+                batchResult.put("Thinker", new ArrayList<>());
+                batchResult.put("Balanced", new ArrayList<>());
+                batchResult.put("Unknown", new ArrayList<>());
+
+                for (Participant p : batch) {
+                    String type = p.getPersonalityType();
+                    if (type == null) type = "Unknown";
+                    batchResult.computeIfAbsent(type, k -> new ArrayList<>()).add(p);
+                }
+                return batchResult;
+            });
+        }
+
+        try {
+            List<Future<Map<String, List<Participant>>>> futures = teamExecutor.invokeAll(tasks, 30, TimeUnit.SECONDS);
+
+            Map<String, List<Participant>> finalResult = new HashMap<>();
+            finalResult.put("Leader", new ArrayList<>());
+            finalResult.put("Thinker", new ArrayList<>());
+            finalResult.put("Balanced", new ArrayList<>());
+            finalResult.put("Unknown", new ArrayList<>());
+
+            for (Future<Map<String, List<Participant>>> future : futures) {
+                Map<String, List<Participant>> batchResult = future.get();
+                for (Map.Entry<String, List<Participant>> entry : batchResult.entrySet()) {
+                    finalResult.get(entry.getKey()).addAll(entry.getValue());
+                }
+            }
+
+            finalResult.values().forEach(Collections::shuffle);
+            return finalResult;
+
+        } catch (Exception e) {
+            System.out.println("Concurrent categorization failed, using sequential fallback");
+            return categorizeParticipants(participants);
+        }
+    }
+
+    private void formTeamsConcurrently(List<Team> teams, List<Participant> leaders,
+                                       List<Participant> thinkers, List<Participant> balanced, int teamSize) {
+
+        List<Participant> safeLeaders = new CopyOnWriteArrayList<>(leaders);
+        List<Participant> safeThinkers = new CopyOnWriteArrayList<>(thinkers);
+        List<Participant> safeBalanced = new CopyOnWriteArrayList<>(balanced);
+
+        AtomicInteger currentTeamIndex = new AtomicInteger(0);
+        List<Callable<Void>> tasks = new ArrayList<>();
+
+        for (int i = 0; i < availableProcessors; i++) {
+            tasks.add(() -> {
+                int teamIdx;
+                while ((teamIdx = currentTeamIndex.getAndIncrement()) < teams.size()) {
+                    Team team = teams.get(teamIdx);
+                    fillSingleTeam(team, safeLeaders, safeThinkers, safeBalanced, teamSize);
+                }
+                return null;
+            });
+        }
+
+        try {
+            teamExecutor.invokeAll(tasks, 60, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            System.out.println("Team formation interrupted");
+        }
+    }
+
+    private void fillSingleTeam(Team team, List<Participant> leaders,
+                                List<Participant> thinkers, List<Participant> balanced, int teamSize) {
+
+        // Add one leader if available
+        if (!leaders.isEmpty() && !team.isFull()) {
+            team.addMember(leaders.remove(0));
+        }
+
+        // Add up to 2 thinkers
+        int thinkersAdded = 0;
+        while (thinkersAdded < 2 && !thinkers.isEmpty() && !team.isFull()) {
+            team.addMember(thinkers.remove(0));
+            thinkersAdded++;
+        }
+
+        // Fill with balanced participants
+        while (!team.isFull() && !balanced.isEmpty()) {
+            team.addMember(balanced.remove(0));
+        }
+    }
+
+    private void balanceTeamsConcurrently(List<Team> teams) {
+        if (teams.size() <= 1) return;
+
+        System.out.println("\nBalancing teams concurrently...");
+
+        // Use parallel stream for simple concurrency
+        teams.parallelStream().forEach(team -> {
+            // Local optimization for each team
+            for (Team otherTeam : teams) {
+                if (team != otherTeam) {
+                    attemptSkillSwap(team, otherTeam);
+                }
+            }
+        });
+
+        System.out.println("Team balancing completed");
+    }
+
+    private void attemptSkillSwap(Team team1, Team team2) {
+        for (Participant p1 : team1.getMembers()) {
+            for (Participant p2 : team2.getMembers()) {
+                if (isValidSwap(team1, team2, p1, p2)) {
+                    double newDiff = calculateNewSkillDifference(team1, team2, p1, p2);
+                    double currentDiff = Math.abs(team1.getAverageSkill() - team2.getAverageSkill());
+
+                    if (newDiff < currentDiff) {
+                        swapMembers(team1, team2, p1, p2);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    // KEEP ALL YOUR ORIGINAL VALIDATION AND DISPLAY METHODS
     private void validateInput(List<Participant> participants, int teamSize) throws TeamFormationException {
         if (participants == null || participants.isEmpty()) {
             throw new TeamFormationException("No participants provided");
@@ -96,167 +239,9 @@ public class BalancedTeamFormationStrategy implements TeamFormationStrategy {
         return teams;
     }
 
-    private void distributeLeaders(List<Team> teams, List<Participant> leaders) {
-        int leaderIndex = 0;
-        for (Team team : teams) {
-            if (leaderIndex < leaders.size() && !team.isFull()) {
-                team.addMember(leaders.get(leaderIndex++));
-            }
-        }
-    }
-
-    private void distributeThinkers(List<Team> teams, List<Participant> thinkers, int teamSize) {
-        int thinkerIndex = 0;
-        for (Team team : teams) {
-            int spotsAvailable = teamSize - team.getCurrentSize();
-            int thinkersToAdd = Math.min(2, Math.min(spotsAvailable, thinkers.size() - thinkerIndex));
-
-            for (int i = 0; i < thinkersToAdd; i++) {
-                if (thinkerIndex < thinkers.size()) {
-                    team.addMember(thinkers.get(thinkerIndex++));
-                }
-            }
-        }
-    }
-
-    private void fillWithBalanced(List<Team> teams, List<Participant> balanced, int teamSize) {
-        int balancedIndex = 0;
-        for (Team team : teams) {
-            while (!team.isFull() && balancedIndex < balanced.size()) {
-                team.addMember(balanced.get(balancedIndex++));
-            }
-        }
-    }
-
-    private void ensureFullTeams(List<Team> teams, List<Participant> allParticipants, int teamSize) {
-        List<Team> incompleteTeams = teams.stream()
-                .filter(team -> !team.isFull())
-                .collect(Collectors.toList());
-
-        if (incompleteTeams.isEmpty()) return;
-
-        Set<Participant> assignedParticipants = teams.stream()
-                .flatMap(team -> team.getMembers().stream())
-                .collect(Collectors.toSet());
-
-        List<Participant> unassignedParticipants = allParticipants.stream()
-                .filter(p -> !assignedParticipants.contains(p))
-                .collect(Collectors.toList());
-
-        int participantIndex = 0;
-        for (Team team : incompleteTeams) {
-            while (!team.isFull() && participantIndex < unassignedParticipants.size()) {
-                team.addMember(unassignedParticipants.get(participantIndex++));
-            }
-        }
-    }
-
-    private void balanceTeams(List<Team> teams) {
-        balanceSkillLevels(teams);
-        balanceGameVariety(teams);
-        balanceRoleDiversity(teams);
-    }
-
-    private void balanceSkillLevels(List<Team> teams) {
-        for (int i = 0; i < 10; i++) { // Max 10 iterations
-            teams.sort(Comparator.comparingDouble(Team::getAverageSkill));
-            Team lowestTeam = teams.get(0);
-            Team highestTeam = teams.get(teams.size() - 1);
-
-            if (!tryImproveSkillBalance(lowestTeam, highestTeam)) {
-                break; // No more improvements possible
-            }
-        }
-    }
-
-    private boolean tryImproveSkillBalance(Team lowTeam, Team highTeam) {
-        double currentDiff = highTeam.getAverageSkill() - lowTeam.getAverageSkill();
-        if (currentDiff < 1.0) return false;
-
-        for (Participant highMember : highTeam.getMembers()) {
-            for (Participant lowMember : lowTeam.getMembers()) {
-                if (isValidSwap(lowTeam, highTeam, lowMember, highMember)) {
-                    double newLowAvg = calculateNewAverage(lowTeam, lowMember, highMember);
-                    double newHighAvg = calculateNewAverage(highTeam, highMember, lowMember);
-
-                    if ((newHighAvg - newLowAvg) < currentDiff) {
-                        swapMembers(lowTeam, highTeam, lowMember, highMember);
-                        return true;
-                    }
-                }
-            }
-        }
-        return false;
-    }
-
-    private void balanceGameVariety(List<Team> teams) {
-        for (Team team : teams) {
-            Map<String, Long> gameCounts = team.getMembers().stream()
-                    .collect(Collectors.groupingBy(Participant::getPreferredGame, Collectors.counting()));
-
-            for (Map.Entry<String, Long> entry : gameCounts.entrySet()) {
-                if (entry.getValue() > 2) {
-                    tryFixGameVariety(team, entry.getKey(), teams);
-                }
-            }
-        }
-    }
-
-    private void tryFixGameVariety(Team problemTeam, String overGame, List<Team> allTeams) {
-        for (Participant excessPlayer : problemTeam.getMembers()) {
-            if (!excessPlayer.getPreferredGame().equals(overGame)) continue;
-
-            for (Team otherTeam : allTeams) {
-                if (otherTeam == problemTeam) continue;
-
-                for (Participant otherPlayer : otherTeam.getMembers()) {
-                    if (!otherPlayer.getPreferredGame().equals(overGame) &&
-                            isValidSwap(problemTeam, otherTeam, excessPlayer, otherPlayer)) {
-                        swapMembers(problemTeam, otherTeam, excessPlayer, otherPlayer);
-                        return;
-                    }
-                }
-            }
-        }
-    }
-
-    private void balanceRoleDiversity(List<Team> teams) {
-        for (Team team : teams) {
-            Set<String> uniqueRoles = team.getMembers().stream()
-                    .map(Participant::getPreferredRole)
-                    .collect(Collectors.toSet());
-
-            if (uniqueRoles.size() < 3) {
-                tryFixRoleDiversity(team, teams);
-            }
-        }
-    }
-
-    private void tryFixRoleDiversity(Team problemTeam, List<Team> allTeams) {
-        Set<String> currentRoles = problemTeam.getMembers().stream()
-                .map(Participant::getPreferredRole)
-                .collect(Collectors.toSet());
-
-        for (Participant currentPlayer : problemTeam.getMembers()) {
-            for (Team otherTeam : allTeams) {
-                if (otherTeam == problemTeam) continue;
-
-                for (Participant otherPlayer : otherTeam.getMembers()) {
-                    if (!currentRoles.contains(otherPlayer.getPreferredRole()) &&
-                            isValidSwap(problemTeam, otherTeam, currentPlayer, otherPlayer)) {
-                        swapMembers(problemTeam, otherTeam, currentPlayer, otherPlayer);
-                        return;
-                    }
-                }
-            }
-        }
-    }
-
     private boolean isValidSwap(Team team1, Team team2, Participant p1, Participant p2) {
         return isValidPersonalityDistribution(team1, p1, p2) &&
-                isValidPersonalityDistribution(team2, p2, p1) &&
-                isValidGameDistribution(team1, p1, p2) &&
-                isValidGameDistribution(team2, p2, p1);
+                isValidPersonalityDistribution(team2, p2, p1);
     }
 
     private boolean isValidPersonalityDistribution(Team team, Participant remove, Participant add) {
@@ -270,18 +255,6 @@ public class BalancedTeamFormationStrategy implements TeamFormationStrategy {
         newCounts.put(addType, newCounts.getOrDefault(addType, 0) + 1);
 
         return isValidPersonalityMix(newCounts, team.getTeamSize());
-    }
-
-    private boolean isValidGameDistribution(Team team, Participant remove, Participant add) {
-        if (remove.getPreferredGame().equals(add.getPreferredGame())) {
-            return true;
-        }
-
-        Map<String, Long> gameCounts = team.getMembers().stream()
-                .collect(Collectors.groupingBy(Participant::getPreferredGame, Collectors.counting()));
-
-        long newCount = gameCounts.getOrDefault(add.getPreferredGame(), 0L) + 1;
-        return newCount <= 2;
     }
 
     private Map<String, Integer> countPersonalityTypes(Team team) {
@@ -307,29 +280,12 @@ public class BalancedTeamFormationStrategy implements TeamFormationStrategy {
         return leaders <= 1 && thinkers <= 2 && total == teamSize;
     }
 
-    private boolean isTeamValid(Team team) {
-        Map<String, Integer> personalityCounts = countPersonalityTypes(team);
-
-        if (!isValidPersonalityMix(personalityCounts, team.getTeamSize())) {
-            return false;
-        }
-
-        Map<String, Long> gameCounts = team.getMembers().stream()
-                .collect(Collectors.groupingBy(Participant::getPreferredGame, Collectors.counting()));
-        boolean validGames = gameCounts.values().stream().allMatch(count -> count <= 2);
-
-        Set<String> uniqueRoles = team.getMembers().stream()
-                .map(Participant::getPreferredRole)
-                .collect(Collectors.toSet());
-        boolean validRoles = uniqueRoles.size() >= 3;
-
-        return validGames && validRoles;
-    }
-
-    private double calculateNewAverage(Team team, Participant remove, Participant add) {
-        double total = team.getAverageSkill() * team.getCurrentSize();
-        total = total - remove.getSkillLevel() + add.getSkillLevel();
-        return total / team.getCurrentSize();
+    private double calculateNewSkillDifference(Team team1, Team team2, Participant p1, Participant p2) {
+        double newAvg1 = (team1.getAverageSkill() * team1.getCurrentSize() - p1.getSkillLevel() + p2.getSkillLevel())
+                / team1.getCurrentSize();
+        double newAvg2 = (team2.getAverageSkill() * team2.getCurrentSize() - p2.getSkillLevel() + p1.getSkillLevel())
+                / team2.getCurrentSize();
+        return Math.abs(newAvg1 - newAvg2);
     }
 
     private void swapMembers(Team team1, Team team2, Participant p1, Participant p2) {
@@ -337,6 +293,8 @@ public class BalancedTeamFormationStrategy implements TeamFormationStrategy {
         team2.getMembers().remove(p2);
         team1.addMember(p2);
         team2.addMember(p1);
+        team1.calculateAverageSkill();
+        team2.calculateAverageSkill();
     }
 
     private void displayTeamsWithValidity(List<Team> teams) {
@@ -364,6 +322,25 @@ public class BalancedTeamFormationStrategy implements TeamFormationStrategy {
         }
 
         displaySummaryStatistics(teams, validTeams, invalidTeams);
+    }
+
+    private boolean isTeamValid(Team team) {
+        Map<String, Integer> personalityCounts = countPersonalityTypes(team);
+
+        if (!isValidPersonalityMix(personalityCounts, team.getTeamSize())) {
+            return false;
+        }
+
+        Map<String, Long> gameCounts = team.getMembers().stream()
+                .collect(Collectors.groupingBy(Participant::getPreferredGame, Collectors.counting()));
+        boolean validGames = gameCounts.values().stream().allMatch(count -> count <= 2);
+
+        Set<String> uniqueRoles = team.getMembers().stream()
+                .map(Participant::getPreferredRole)
+                .collect(Collectors.toSet());
+        boolean validRoles = uniqueRoles.size() >= 3;
+
+        return validGames && validRoles;
     }
 
     private void displayTeamDetails(Team team, String validityStatus) {
@@ -446,5 +423,17 @@ public class BalancedTeamFormationStrategy implements TeamFormationStrategy {
         System.out.println("\n=== PARTICIPANT USAGE SUMMARY ===");
         System.out.println("Participants used: " + totalUsed + " out of " + availableParticipants.size());
         System.out.println("Participants not assigned: " + (availableParticipants.size() - totalUsed));
+    }
+
+    public void shutdown() {
+        teamExecutor.shutdown();
+        try {
+            if (!teamExecutor.awaitTermination(3, TimeUnit.SECONDS)) {
+                teamExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            teamExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 }
