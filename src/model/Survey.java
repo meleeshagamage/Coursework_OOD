@@ -194,10 +194,15 @@ public class Survey {
     }
 
     public String determinePersonalityType(int totalScore) {
-        if (totalScore >= 90 && totalScore <= 100) return "Leader";
-        else if (totalScore >= 70 && totalScore <= 89) return "Balanced";
-        else if (totalScore >= 50 && totalScore <= 69) return "Thinker";
-        else return "Unknown";
+        if (totalScore >= 90 && totalScore <= 100) {
+            return "Leader";
+        } else if (totalScore >= 70 && totalScore <= 89) {
+            return "Balanced";
+        } else if (totalScore >= 50 && totalScore <= 69) {
+            return "Thinker";
+        } else {
+            return "Unknown";
+        }
     }
 
     private String getPersonalityDescription(String personalityType) {

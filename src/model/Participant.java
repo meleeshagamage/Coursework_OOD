@@ -35,9 +35,15 @@ public class Participant {
     }
 
     private String classifyPersonality(int score) {
-        if (score >= 90) return "Leader";
-        else if (score >= 70) return "Balanced";
-        else return "Thinker";
+        if (score >= 90 && score <= 100) {
+            return "Leader";
+        } else if (score >= 70 && score <= 89) {
+            return "Balanced";
+        } else if (score >= 50 && score <= 69) {
+            return "Thinker";
+        } else {
+            return "Unknown";
+        }
     }
 
     // Getters and setters
@@ -70,4 +76,3 @@ public class Participant {
                 name, id, preferredGame, skillLevel, preferredRole, personalityType, personalityScore);
     }
 }
-
