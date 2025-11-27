@@ -116,5 +116,16 @@ public class FileHandler {
 
     public static void shutdown() {
         executor.shutdown();
+        try {
+            // Wait a while for existing tasks to terminate
+            if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+                // Force shutdown if tasks don't complete in time
+                executor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            // If interrupted, force shutdown
+            executor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 }
