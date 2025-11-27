@@ -1,4 +1,4 @@
-package Services;
+package services;
 
 import model.Participant;
 import model.Team;
