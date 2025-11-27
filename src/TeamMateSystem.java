@@ -2,7 +2,7 @@ import model.Participant;
 import model.Survey;
 import model.Team;
 import strategies.BalancedTeamFormationStrategy;
-import Services.FileHandler;
+import services.FileHandler;
 
 import exceptions.TeamFormationException;
 import exceptions.FileHandlingException;
@@ -52,14 +52,14 @@ public class TeamMateSystem {
                 case "4": viewCurrentParticipants(); break;
                 case "5": saveFormedTeams(); break;
                 case "6": return;
-                default: System.out.println("Invalid option.");
+                default: System.out.println("Invalid option. Please choose 1-6.");
             }
         }
     }
 
     private void formTeams() {
         if (participants.isEmpty()) {
-            System.out.println("No participants available.");
+            System.out.println("No participants available. Please load participants first.");
             return;
         }
 
@@ -68,7 +68,7 @@ public class TeamMateSystem {
                 .count();
 
         if (surveyedCount == 0) {
-            System.out.println("No participants have completed surveys.");
+            System.out.println("No participants have completed surveys. Please conduct surveys first.");
             return;
         }
 
@@ -84,11 +84,27 @@ public class TeamMateSystem {
     }
 
     private int getTeamSize() {
-        try {
-            int size = Integer.parseInt(scanner.nextLine());
-            return (size >= 2 && size <= participants.size()) ? size : 4;
-        } catch (Exception e) {
-            return 4;
+        while (true) {
+            try {
+                String input = scanner.nextLine().trim();
+                int size = Integer.parseInt(input);
+
+                if (size < 2) {
+                    System.out.print("Team size must be at least 2. Please enter a valid size: ");
+                    continue;
+                }
+
+                if (size > participants.size()) {
+                    System.out.print("Team size cannot exceed number of participants (" +
+                            participants.size() + "). Please enter a valid size: ");
+                    continue;
+                }
+
+                return size;
+
+            } catch (NumberFormatException e) {
+                System.out.print("Invalid number. Please enter a valid team size: ");
+            }
         }
     }
 
@@ -102,7 +118,7 @@ public class TeamMateSystem {
 
     private void saveFormedTeams() {
         if (currentTeams.isEmpty()) {
-            System.out.println("No teams formed yet.");
+            System.out.println("No teams formed yet. Please form teams first.");
             return;
         }
 
@@ -113,9 +129,9 @@ public class TeamMateSystem {
 
         try {
             FileHandler.saveTeamsToCSV(currentTeams, filePath);
-            System.out.println("Teams saved to: " + filePath);
+            System.out.println("Teams successfully saved to: " + filePath);
         } catch (FileHandlingException e) {
-            System.out.println("Error saving: " + e.getMessage());
+            System.out.println("Error saving teams: " + e.getMessage());
         }
     }
 
@@ -136,9 +152,9 @@ public class TeamMateSystem {
             participants.addAll(loaded);
             currentTeams.clear();
 
-            System.out.println("Loaded " + loaded.size() + " participants.");
+            System.out.println("Successfully loaded " + loaded.size() + " participants.");
         } catch (FileHandlingException e) {
-            System.out.println("Error loading: " + e.getMessage());
+            System.out.println("Error loading participants: " + e.getMessage());
         }
     }
 
@@ -152,7 +168,7 @@ public class TeamMateSystem {
         System.out.println("Total: " + participants.size() + " participants");
 
         long surveyed = participants.stream().filter(Participant::isSurveyCompleted).count();
-        System.out.println("Surveyed: " + surveyed);
+        System.out.println("Surveyed: " + surveyed + " | Not surveyed: " + (participants.size() - surveyed));
 
         for (Participant p : participants) {
             String status = p.isSurveyCompleted() ? "[SURVEYED]" : "[NO SURVEY]";
