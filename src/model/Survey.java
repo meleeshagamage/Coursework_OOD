@@ -155,17 +155,18 @@ public class Survey {
     }
 
     private boolean collectAdditionalInfo(Scanner scanner) {
-        try {
-            this.preferredGame = selectGame(scanner);
-            this.skillLevel = selectSkillLevel(scanner);
-            this.preferredRole = selectRole(scanner);
-            return true;
-        } catch (SurveyCancelledException e) {
-            return false;
-        }
+        // Use simple boolean check instead of exception
+        this.preferredGame = selectGame(scanner);
+        if (preferredGame == null) return false;
+
+        this.skillLevel = selectSkillLevel(scanner);
+        if (skillLevel == -1) return false;
+
+        this.preferredRole = selectRole(scanner);
+        return preferredRole != null;
     }
 
-    private String selectGame(Scanner scanner) throws SurveyCancelledException {
+    private String selectGame(Scanner scanner) {
         String[] games = {"Valorant", "DOTA 2", "CS:GO", "FIFA", "Basketball", "Chess", "Badminton"};
         System.out.println("\n=== Game Preference ===");
         for (int i = 0; i < games.length; i++) {
@@ -177,7 +178,7 @@ public class Survey {
             String input = scanner.nextLine().trim();
 
             if (input.equalsIgnoreCase("cancel")) {
-                throw new SurveyCancelledException();
+                return null;
             }
 
             try {
@@ -193,13 +194,13 @@ public class Survey {
         }
     }
 
-    private int selectSkillLevel(Scanner scanner) throws SurveyCancelledException {
+    private int selectSkillLevel(Scanner scanner) {
         while (true) {
             System.out.print("Enter your skill level (1-10, where 10 is expert, or 'cancel' to stop): ");
             String input = scanner.nextLine().trim();
 
             if (input.equalsIgnoreCase("cancel")) {
-                throw new SurveyCancelledException();
+                return -1;
             }
 
             try {
@@ -215,7 +216,7 @@ public class Survey {
         }
     }
 
-    private String selectRole(Scanner scanner) throws SurveyCancelledException {
+    private String selectRole(Scanner scanner) {
         String[] roles = {"Strategist", "Attacker", "Defender", "Supporter", "Coordinator"};
         Map<String, String> roleDescriptions = new HashMap<>();
         roleDescriptions.put("Strategist", "Focuses on tactics and planning. Keeps the bigger picture in mind.");
@@ -234,7 +235,7 @@ public class Survey {
             String input = scanner.nextLine().trim();
 
             if (input.equalsIgnoreCase("cancel")) {
-                throw new SurveyCancelledException();
+                return null;
             }
 
             try {
@@ -299,7 +300,7 @@ public class Survey {
     public int getTotalScore() { return totalScore; }
     public String getPersonalityType() { return personalityType; }
 
-    // Setters - removed dangerous setPersonalityType method
+    // Setters
     public void setParticipantId(String participantId) { this.participantId = participantId; }
     public void setResponses(Map<String, Integer> responses) { this.responses = new HashMap<>(responses); }
     public void setPreferredGame(String preferredGame) { this.preferredGame = preferredGame; }
@@ -307,13 +308,6 @@ public class Survey {
     public void setPreferredRole(String preferredRole) { this.preferredRole = preferredRole; }
     public void setTotalScore(int totalScore) {
         this.totalScore = totalScore;
-        this.personalityType = determinePersonalityType(totalScore); // Maintains consistency
-    }
-
-    // Custom exception for survey cancellation
-    private static class SurveyCancelledException extends Exception {
-        public SurveyCancelledException() {
-            super("Survey was cancelled by user");
-        }
+        this.personalityType = determinePersonalityType(totalScore);
     }
 }
