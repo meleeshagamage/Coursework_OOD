@@ -263,8 +263,7 @@ public class Survey {
             return "Balanced";
         } else if (totalScore >= 50 && totalScore <= 69) {
             return "Thinker";
-        } else if (totalScore >= 20 && totalScore <= 49) {
-            return "Adaptable";
+
         } else {
             return "Unknown";
         }
@@ -275,7 +274,7 @@ public class Survey {
             case "Leader": return "Confident, decision-maker, naturally takes charge";
             case "Balanced": return "Adaptive, communicative, team-oriented";
             case "Thinker": return "Observant, analytical, prefers planning before action";
-            case "Adaptable": return "Flexible, supportive, adjusts to team needs";
+
             default: return "Personality type not determined";
         }
     }
