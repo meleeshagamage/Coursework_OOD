@@ -300,8 +300,6 @@ public class Survey {
     public String getPersonalityType() { return personalityType; }
 
     // Setters
-    public void setParticipantId(String participantId) { this.participantId = participantId; }
-    public void setResponses(Map<String, Integer> responses) { this.responses = new HashMap<>(responses); }
     public void setPreferredGame(String preferredGame) { this.preferredGame = preferredGame; }
     public void setSkillLevel(int skillLevel) { this.skillLevel = skillLevel; }
     public void setPreferredRole(String preferredRole) { this.preferredRole = preferredRole; }
