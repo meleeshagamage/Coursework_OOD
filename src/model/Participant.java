@@ -12,14 +12,12 @@ public class Participant {
     private String preferredRole;
     private int personalityScore;
     private String personalityType;
-    private Map<String, Integer> surveyResponses;
     private boolean surveyCompleted;
 
     public Participant(String id, String name, String email) {
         this.id = id;
         this.name = name;
         this.email = email;
-        this.surveyResponses = new HashMap<>();
         this.surveyCompleted = false;
     }
 
@@ -56,7 +54,7 @@ public class Participant {
     public int getPersonalityScore() { return personalityScore; }
     public String getPersonalityType() { return personalityType; }
     public boolean isSurveyCompleted() { return surveyCompleted; }
-    public Map<String, Integer> getSurveyResponses() { return new HashMap<>(surveyResponses); }
+
 
     public void setPreferredGame(String game) { this.preferredGame = game; }
     public void setSkillLevel(int level) { this.skillLevel = level; }
@@ -66,9 +64,7 @@ public class Participant {
         this.personalityType = classifyPersonality(score);
     }
     public void setSurveyCompleted(boolean completed) { this.surveyCompleted = completed; }
-    public void setSurveyResponses(Map<String, Integer> responses) {
-        this.surveyResponses = new HashMap<>(responses);
-    }
+
 
     @Override
     public String toString() {

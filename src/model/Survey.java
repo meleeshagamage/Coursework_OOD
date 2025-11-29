@@ -90,7 +90,7 @@ public class Survey {
     }
 
     private static void updateParticipantFromSurvey(Participant participant, Survey survey) {
-        participant.setSurveyResponses(survey.getResponses());
+
         participant.setPreferredGame(survey.getPreferredGame());
         participant.setSkillLevel(survey.getSkillLevel());
         participant.setPreferredRole(survey.getPreferredRole());
