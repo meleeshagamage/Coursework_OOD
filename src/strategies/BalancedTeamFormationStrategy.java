@@ -42,23 +42,56 @@ public class BalancedTeamFormationStrategy implements TeamFormationStrategy {
         System.out.println("Balanced (70-89): " + balanced.size());
         System.out.println("Thinkers (50-69): " + thinkers.size());
 
+        // USE ALL PARTICIPANTS - Calculate maximum possible teams
         int teamCount = availableParticipants.size() / teamSize;
-        System.out.println("Forming " + teamCount + " teams using " + (teamCount * teamSize) + " participants");
+        if (teamCount == 0) teamCount = 1; // At least one team even if not full
+
+        System.out.println("Forming " + teamCount + " teams using ALL " + availableParticipants.size() + " participants");
 
         List<Team> teams = createEmptyTeams(teamCount, teamSize);
 
-        // CONCURRENT TEAM FORMATION
-        formTeamsConcurrently(teams, leaders, thinkers, balanced, teamSize);
+        // USE ALL PARTICIPANTS - Simple distribution
+        distributeAllParticipants(teams, availableParticipants, teamSize);
 
         // CONCURRENT BALANCING
         balanceTeamsConcurrently(teams);
 
-        // VALIDATION DISPLAY - KEEP YOUR ORIGINAL METHOD
+        // VALIDATION DISPLAY
         displayTeamsWithValidity(teams);
         displayParticipantUsage(teams, availableParticipants);
 
         teamExecutor.shutdown();
         return teams;
+    }
+
+    // NEW METHOD: Distribute ALL participants to teams
+    private void distributeAllParticipants(List<Team> teams, List<Participant> allParticipants, int teamSize) {
+        System.out.println("\nDistributing ALL " + allParticipants.size() + " participants to teams...");
+
+        // Simple round-robin distribution to use ALL participants
+        int participantIndex = 0;
+        for (Participant participant : allParticipants) {
+            // Find a team that's not full
+            Team targetTeam = null;
+            for (Team team : teams) {
+                if (!team.isFull()) {
+                    targetTeam = team;
+                    break;
+                }
+            }
+
+            // If all teams are full but we still have participants, create a new team
+            if (targetTeam == null) {
+                targetTeam = new Team("Team-" + (teams.size() + 1), teamSize);
+                teams.add(targetTeam);
+            }
+
+            // Add participant to team
+            targetTeam.addMember(participant);
+            participantIndex++;
+        }
+
+        System.out.println("Distributed " + participantIndex + " participants to " + teams.size() + " teams");
     }
 
     private Map<String, List<Participant>> concurrentlyCategorizeParticipants(List<Participant> participants) {
@@ -108,56 +141,6 @@ public class BalancedTeamFormationStrategy implements TeamFormationStrategy {
         } catch (Exception e) {
             System.out.println("Concurrent categorization failed, using sequential fallback");
             return categorizeParticipants(participants);
-        }
-    }
-
-    private void formTeamsConcurrently(List<Team> teams, List<Participant> leaders,
-                                       List<Participant> thinkers, List<Participant> balanced, int teamSize) {
-
-        List<Participant> safeLeaders = new CopyOnWriteArrayList<>(leaders);
-        List<Participant> safeThinkers = new CopyOnWriteArrayList<>(thinkers);
-        List<Participant> safeBalanced = new CopyOnWriteArrayList<>(balanced);
-
-        AtomicInteger currentTeamIndex = new AtomicInteger(0);
-        List<Callable<Void>> tasks = new ArrayList<>();
-
-        for (int i = 0; i < availableProcessors; i++) {
-            tasks.add(() -> {
-                int teamIdx;
-                while ((teamIdx = currentTeamIndex.getAndIncrement()) < teams.size()) {
-                    Team team = teams.get(teamIdx);
-                    fillSingleTeam(team, safeLeaders, safeThinkers, safeBalanced, teamSize);
-                }
-                return null;
-            });
-        }
-
-        try {
-            teamExecutor.invokeAll(tasks, 60, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            System.out.println("Team formation interrupted");
-        }
-    }
-
-    private void fillSingleTeam(Team team, List<Participant> leaders,
-                                List<Participant> thinkers, List<Participant> balanced, int teamSize) {
-
-        // Add one leader if available
-        if (!leaders.isEmpty() && !team.isFull()) {
-            team.addMember(leaders.remove(0));
-        }
-
-        // Add up to 2 thinkers
-        int thinkersAdded = 0;
-        while (thinkersAdded < 2 && !thinkers.isEmpty() && !team.isFull()) {
-            team.addMember(thinkers.remove(0));
-            thinkersAdded++;
-        }
-
-        // Fill with balanced participants
-        while (!team.isFull() && !balanced.isEmpty()) {
-            team.addMember(balanced.remove(0));
         }
     }
 
@@ -423,6 +406,13 @@ public class BalancedTeamFormationStrategy implements TeamFormationStrategy {
         System.out.println("\n=== PARTICIPANT USAGE SUMMARY ===");
         System.out.println("Participants used: " + totalUsed + " out of " + availableParticipants.size());
         System.out.println("Participants not assigned: " + (availableParticipants.size() - totalUsed));
+
+        // This should now show 0 participants not assigned
+        if (totalUsed == availableParticipants.size()) {
+            System.out.println("SUCCESS: All participants have been assigned to teams!");
+        } else {
+            System.out.println("WARNING: Some participants were not assigned to teams.");
+        }
     }
 
     public void shutdown() {
